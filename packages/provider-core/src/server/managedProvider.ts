@@ -51,7 +51,7 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
     readonly publishSnapshot: (snapshot: ServerProvider) => Effect.Effect<void>;
   }) => Effect.Effect<void>;
   readonly refreshInterval?: Duration.Input;
-  readonly refreshOnInterval?: boolean;
+  readonly refreshOnInterval?: boolean | ((snapshot: ServerProvider) => boolean);
   readonly checkProviderOnSettingsChange?: (previous: Settings, next: Settings) => boolean;
 }): Effect.fn.Return<
   ManagedServerProvider,
@@ -284,7 +284,16 @@ export const makeManagedServerProvider = Effect.fn("makeManagedServerProvider")(
             Duration.toMillis(Duration.fromInputUnsafe(refreshInterval)) > 0
               ? hasProviderStatusDemand.pipe(
                   Effect.flatMap((shouldRefresh) =>
-                    shouldRefresh ? refreshSnapshot().pipe(Effect.asVoid) : Effect.void,
+                    shouldRefresh
+                      ? Ref.get(snapshotStateRef).pipe(
+                          Effect.flatMap(({ snapshot }) =>
+                            typeof input.refreshOnInterval !== "function" ||
+                            input.refreshOnInterval(snapshot)
+                              ? refreshSnapshot().pipe(Effect.asVoid)
+                              : Effect.void,
+                          ),
+                        )
+                      : Effect.void,
                   ),
                 )
               : Effect.void,

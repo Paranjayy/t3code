@@ -25,6 +25,8 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { describe } from "vite-plus/test";
 
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
+import { makeOpenCode2ModelLoader } from "../status.ts";
+import { loadOpenCode2Catalog } from "../openCode2Catalog.ts";
 import * as OpenCodeServerLedger from "../OpenCodeServerLedger.ts";
 import * as OpenCode2Client from "./OpenCode2Client.ts";
 import * as OpenCode2Server from "./OpenCode2Server.ts";
@@ -95,6 +97,44 @@ const startExternalServer = Effect.fn("OpenCode2ServerLive.startExternalServer")
 });
 
 describe.runIf(binaryPath !== undefined)("OpenCode2Server live", () => {
+  it.live(
+    "discovers models from an isolated cold server without an interactive CLI",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-cold-models-" });
+        const server = yield* OpenCode2Server.make({
+          binaryPath: binaryPath!,
+          serverUrl: "",
+          serverPassword: "",
+          directory: root,
+          environment: {
+            PATH: process.env.PATH,
+            HOME: root,
+            XDG_CONFIG_HOME: path.join(root, "config"),
+            XDG_DATA_HOME: path.join(root, "data"),
+            XDG_STATE_HOME: path.join(root, "state"),
+            XDG_CACHE_HOME: path.join(root, "cache"),
+          },
+        });
+        const load = yield* makeOpenCode2ModelLoader(
+          server.withConnection(({ client }) => loadOpenCode2Catalog(client, root)),
+        );
+        const models = yield* load;
+        assert.isAbove(models.length, 0);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            OpenCode2Client.layer,
+            OpenCodeRuntime.layer.pipe(Layer.provide(OpenCodeServerLedger.layerTest)),
+          ).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer))),
+        ),
+      ),
+    60_000,
+  );
+
   it.live(
     "spawns one authenticated server per instance and stops it by PID",
     () =>

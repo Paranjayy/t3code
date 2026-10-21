@@ -458,7 +458,13 @@ export const OpenCodeDriver: ProviderDriver<
           streamSettings: snapshotSettings.streamSettings,
           haveSettingsChanged: haveProviderSnapshotSettingsChanged,
           checkProviderOnSettingsChange: () => false,
-          refreshOnInterval: false,
+          // A slow boot must recover without an interactive CLI or manual refresh.
+          // Healthy instances still avoid periodic server launches.
+          refreshOnInterval: (snapshot) =>
+            snapshot.enabled &&
+            snapshot.installed &&
+            snapshot.models.length === 0 &&
+            snapshot.status !== "ready",
           initialSnapshot: (settings) =>
             makePendingOpenCodeProvider(settings.provider).pipe(Effect.map(stampIdentity)),
           checkProvider,
